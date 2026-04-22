@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: raw_data # Nickname for this source
+    database: FULFILLMENT_DB
+    schema: RAW 
+    tables: 
+      - name: fulfillment_events

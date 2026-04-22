@@ -72,3 +72,11 @@ resource "snowflake_grant_privileges_to_account_role" "schema_grant" {
     schema_name = "\"${snowflake_database.fulfillment_db.name}\".\"${snowflake_schema.raw_schema.name}\""
   }
 }
+
+resource "snowflake_grant_privileges_to_account_role" "analytics_schema_grant" {
+  privileges        = ["ALL PRIVILEGES"]
+  account_role_name = snowflake_role.pipeline_role.name
+  on_schema {
+    schema_name = "\"${snowflake_database.fulfillment_db.name}\".\"${snowflake_schema.analytics_schema.name}\""
+  }
+}
