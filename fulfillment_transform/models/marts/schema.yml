@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: fct_fulfillment_performance
+    description: "Final fact table measuring processing times and discrepancies across fulfillment centers."
+    columns: 
+      - name: order_number
+        description: "Primary key"
+        tests:
+          - unique
+          - not_null
+      - name: order_status
+        description: "Needs a status"
+        tests:
+          - not_null
+      - name: dc_name
+        description: "Every order/box has a dedicated DC assigned"
+        tests:
+          - not_null
+      - name: fulfillment_week
+        description: "Every order/box has an assigned fulfillment week"
+        tests:
+          - not_null
