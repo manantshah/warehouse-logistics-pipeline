@@ -1,10 +1,17 @@
 import pandas as pd
+import logging
 from faker import Faker
 import random
 import os
 from datetime import datetime, timedelta
 import boto3
 from dotenv import load_dotenv
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # Load variables from the .env file
 load_dotenv()
@@ -13,7 +20,7 @@ load_dotenv()
 fake = Faker('en_IN')
 
 def generate_state_machine_fulfillment_data(num_records=5000):
-    print(f"🏭 Generating {num_records} lifecycle-accurate fulfillment records...")
+    logging.info(f"🏭 Generating {num_records} lifecycle-accurate fulfillment records...")
    
     data = []
     sites = ['Bengaluru (Karnataka)', 'Ahmedabad (Gujarat)', 'Mumbai (Maharashtra)', 'Pune (Maharashtra)']
@@ -100,7 +107,7 @@ def generate_state_machine_fulfillment_data(num_records=5000):
     return pd.DataFrame(data)
 
 def upload_to_s3(local_file_path, bucket_name, s3_file_key):
-    print(f"☁️ Uploading {local_file_path} to s3://{bucket_name}/{s3_file_key}...")
+    logging.info(f"☁️ Uploading {local_file_path} to s3://{bucket_name}/{s3_file_key}...")
    
     s3_client = boto3.client(
         's3',
@@ -109,7 +116,7 @@ def upload_to_s3(local_file_path, bucket_name, s3_file_key):
     )
    
     s3_client.upload_file(local_file_path, bucket_name, s3_file_key)
-    print("✅ Upload successful!")
+    logging.info("✅ Upload successful!")
 
 if __name__ == "__main__":
     os.makedirs("data/raw", exist_ok=True)
@@ -130,13 +137,13 @@ if __name__ == "__main__":
    
     df.to_csv(local_path, index=False)
    
-    print(f"💾 Local file saved to {local_path}")
+    logging.info(f"💾 Local file saved to {local_path}")
    
     # Show a quick preview of rows in different states to verify the logic worked
-    print("\n--- Logic Verification Preview ---")
-    print(df[df['order_status'] == 'planned'][['order_status', 'approved_timestamp', 'fulfillment_line_id']].head(1))
-    print(df[df['order_status'] == 'picking'][['order_status', 'expected_item_qty', 'picked_item_qty', 'pick_complete_timestamp']].head(1))
-    print(df[df['order_status'] == 'picked complete'][['order_status', 'expected_weight', 'actual_weight', 'pick_complete_timestamp']].head(1))
+    logging.info("\n--- Logic Verification Preview ---")
+    logging.info(df[df['order_status'] == 'planned'][['order_status', 'approved_timestamp', 'fulfillment_line_id']].head(1))
+    logging.info(df[df['order_status'] == 'picking'][['order_status', 'expected_item_qty', 'picked_item_qty', 'pick_complete_timestamp']].head(1))
+    logging.info(df[df['order_status'] == 'picked complete'][['order_status', 'expected_weight', 'actual_weight', 'pick_complete_timestamp']].head(1))
    
     # 2. Upload to AWS S3
     bucket = os.getenv('AWS_S3_BUCKET_NAME')

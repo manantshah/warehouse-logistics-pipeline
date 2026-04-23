@@ -33,17 +33,28 @@ resource "snowflake_warehouse" "fulfillment_wh" {
 
 # 3. Create the Database & Schemas
 resource "snowflake_database" "fulfillment_db" {
-  name = "FULFILLMENT_DB"
+  name                        = "FULFILLMENT_DB"
+  comment                     = "Primary database for fulfillment events ELT pipeline"
+  data_retention_time_in_days = 1
+
+  # Deleting code doesn't drop database
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "snowflake_schema" "raw_schema" {
-  database = snowflake_database.fulfillment_db.name
-  name     = "RAW"
+  database                    = snowflake_database.fulfillment_db.name
+  name                        = "RAW"
+  comment                     = "Raw data from the source"
+  data_retention_time_in_days = 1
 }
 
 resource "snowflake_schema" "analytics_schema" {
-  database = snowflake_database.fulfillment_db.name
-  name     = "ANALYTICS"
+  database                    = snowflake_database.fulfillment_db.name
+  name                        = "ANALYTICS"
+  comment                     = "Final data marts and business logic views powered by dbt"
+  data_retention_time_in_days = 1
 }
 
 # 4. Wire up Permissions

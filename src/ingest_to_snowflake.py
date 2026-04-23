@@ -1,11 +1,18 @@
 import snowflake.connector
 import os
+import logging
 from dotenv import load_dotenv
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 load_dotenv()
 
 def run_snowflake_ingestion():
-    print("❄️ Connecting to Snowflake...")
+    logging.info("❄️ Connecting to Snowflake...")
    
     try:
         # 1. Connect using the role Terraform just built
@@ -19,9 +26,9 @@ def run_snowflake_ingestion():
             schema='RAW'
         )
         cursor = conn.cursor()
-        print("✅ Connected Successfully!")
+        logging.info("✅ Connected Successfully!")
 
-        print("🏗️ Verifying pipeline objects...")
+        logging.info("🏗️ Verifying pipeline objects...")
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS fulfillment_events (
             order_number VARCHAR, tracking_number VARCHAR, order_status VARCHAR,
@@ -51,7 +58,7 @@ def run_snowflake_ingestion():
             FILE_FORMAT = my_csv_format;
         """)
 
-        print("🚀 Executing COPY INTO command from S3 to Snowflake...")
+        logging.info("🚀 Executing COPY INTO command from S3 to Snowflake...")
         cursor.execute("""
         COPY INTO fulfillment_events
         FROM @my_s3_stage/fulfillment_event_data.csv
@@ -60,14 +67,14 @@ def run_snowflake_ingestion():
        
         cursor.execute("SELECT COUNT(*) FROM fulfillment_events;")
         row_count = cursor.fetchone()[0]
-        print(f"🎉 Success! There are now {row_count} rows in the fulfillment_events table.")
+        logging.info(f"🎉 Success! There are now {row_count} rows in the fulfillment_events table.")
 
     except Exception as e:
-        print(f"❌ Error during ingestion: {e}")
+        logging.error(f"❌ Error during ingestion: {e}")
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
-        print("🔌 Connection closed.")
+        logging.info("🔌 Connection closed.")
 
 if __name__ == "__main__":
     run_snowflake_ingestion()

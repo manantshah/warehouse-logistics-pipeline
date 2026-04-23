@@ -13,6 +13,8 @@ models:
         description: "Needs a status"
         tests:
           - not_null
+          - accepted_values:
+              values: ['planned', 'approved', 'released', 'picking', 'picked complete']
       - name: dc_name
         description: "Every order/box has a dedicated DC assigned"
         tests:
