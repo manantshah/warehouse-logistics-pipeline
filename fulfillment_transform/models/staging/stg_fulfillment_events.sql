@@ -37,7 +37,9 @@ renamed_and_cleaned as (
         cast(picked_item_qty as integer) as picked_item_qty,
         year,
         week_number,
-        CONCAT(year, '-', week_number) as fulfillment_week
+        CONCAT(year, '-', week_number) as fulfillment_week,
+        _extracted_at,
+        _loaded_at
 
     from source
 )
