@@ -1,5 +1,6 @@
 import snowflake.connector
 import os
+import sys
 import logging
 from dotenv import load_dotenv
 
@@ -12,6 +13,17 @@ logging.basicConfig(
 load_dotenv()
 
 def run_snowflake_ingestion():
+
+    # FAIL FAST
+    required_vars = [
+        'SNOWFLAKE_USER', 'SNOWFLAKE_PASSWORD', 'SNOWFLAKE_ACCOUNT',
+        'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'
+    ]
+    for var in required_vars:
+        if not os.getenv(var):
+            logging.error(f"CRITICAL: Missing required environment variable: {var}")
+            sys.exit(1)
+
     logging.info("❄️ Connecting to Snowflake...")
    
     try:
@@ -27,7 +39,14 @@ def run_snowflake_ingestion():
         )
         cursor = conn.cursor()
         logging.info("✅ Connected Successfully!")
+    except snowflake.connector.errors.ProgrammingError as e:
+        logging.error(f"CRITICAL: Snowflake Auth Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"CRITICAL: Failed to connect to Snowflake: {e}")
+        sys.exit(1)
 
+    try:
         logging.info("🏗️ Verifying pipeline objects...")
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS fulfillment_events (
@@ -37,7 +56,8 @@ def run_snowflake_ingestion():
             expected_item_qty INT, site_name VARCHAR, fulfillment_line_id FLOAT,
             approved_timestamp TIMESTAMP_NTZ, released_timestamp TIMESTAMP_NTZ,
             pick_start_timestamp TIMESTAMP_NTZ, picked_item_qty FLOAT,
-            pick_complete_timestamp TIMESTAMP_NTZ, actual_weight FLOAT
+            pick_complete_timestamp TIMESTAMP_NTZ, actual_weight FLOAT,
+            _extracted_at TIMESTAMP_NTZ, _loaded_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
         );
         """)
 
@@ -60,8 +80,18 @@ def run_snowflake_ingestion():
 
         logging.info("🚀 Executing COPY INTO command from S3 to Snowflake...")
         cursor.execute("""
-        COPY INTO fulfillment_events
-        FROM @my_s3_stage/fulfillment_event_data.csv
+        COPY INTO fulfillment_events (
+            order_number, tracking_number, order_status,
+            expected_weight, box_size, expected_packing_date,
+            expected_delivery_date, year, week_number,
+            expected_item_qty, site_name, fulfillment_line_id,
+            approved_timestamp, released_timestamp,
+            pick_start_timestamp, picked_item_qty,
+            pick_complete_timestamp, actual_weight,
+            _extracted_at
+        )
+        FROM @my_s3_stage/
+        PATTERN = '.*fulfillment_events_.*\\.csv'
         ON_ERROR = 'CONTINUE';
         """)
        
@@ -69,8 +99,12 @@ def run_snowflake_ingestion():
         row_count = cursor.fetchone()[0]
         logging.info(f"🎉 Success! There are now {row_count} rows in the fulfillment_events table.")
 
+    except snowflake.connector.errors.ProgrammingError as e:
+        logging.error(f"CRITICAL: Snowflake SQL Execution Error: {e}")
+        sys.exit(1)
     except Exception as e:
-        logging.error(f"❌ Error during ingestion: {e}")
+        logging.error(f"CRITICAL: Error during ingestion SQL execution: {e}")
+        sys.exit(1)
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()

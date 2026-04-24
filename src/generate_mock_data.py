@@ -3,8 +3,10 @@ import logging
 from faker import Faker
 import random
 import os
+import sys
 from datetime import datetime, timedelta
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 logging.basicConfig(
@@ -19,7 +21,7 @@ load_dotenv()
 # Initialize Faker
 fake = Faker('en_IN')
 
-def generate_state_machine_fulfillment_data(num_records=5000):
+def generate_state_machine_fulfillment_data(num_records=200):
     logging.info(f"🏭 Generating {num_records} lifecycle-accurate fulfillment records...")
    
     data = []
@@ -34,7 +36,7 @@ def generate_state_machine_fulfillment_data(num_records=5000):
        
         # --- BASE STATE: Applies to ALL orders (even 'planned') ---
         # Generate base creation time
-        base_time = datetime.now() - timedelta(days=random.randint(0, 14), hours=random.randint(0, 23))
+        base_time = datetime.now() - timedelta(minutes=random.randint(0, 1440))
        
         expected_packing_date = (base_time + timedelta(days=random.randint(0, 2))).date()
         expected_delivery_date = (expected_packing_date + timedelta(days=random.randint(2, 5)))
@@ -108,45 +110,73 @@ def generate_state_machine_fulfillment_data(num_records=5000):
 
 def upload_to_s3(local_file_path, bucket_name, s3_file_key):
     logging.info(f"☁️ Uploading {local_file_path} to s3://{bucket_name}/{s3_file_key}...")
-   
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-    )
-   
-    s3_client.upload_file(local_file_path, bucket_name, s3_file_key)
-    logging.info("✅ Upload successful!")
+    
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+        )
+    
+        s3_client.upload_file(local_file_path, bucket_name, s3_file_key)
+        logging.info("✅ Upload successful!")
+    except FileNotFoundError:
+        logging.error(f"CRITICAL: The local file {local_file_path} was not found")
+        sys.exit(1)
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        logging.error(f"CRITICAL: AWS S3 Upload Failed! Error Code: {error_code}")
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during S3 upload: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
+
+    # Fail fast check
+    bucket = os.getenv('AWS_S3_BUCKET_NAME')
+    aws_key = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
+
+    if not bucket or not aws_key or not aws_secret:
+        logging.error("CRITICAL: Missing AWS environment variables (AWS_S3_BUCKET_NAME or AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY)")
+        sys.exit(1)
+
     os.makedirs("data/raw", exist_ok=True)
    
-    # 1. Generate Data
-    df = generate_state_machine_fulfillment_data(5000)
-    local_path = "data/raw/fulfillment_event_data.csv"
-   
-    # Ensure correct column order matching your exact specifications
-    ordered_columns = [
-        'order_number', 'tracking_number', 'order_status', 'expected_weight', 'box_size',
-        'expected_packing_date', 'expected_delivery_date', 'year', 'week_number',
-        'expected_item_qty', 'site_name', 'fulfillment_line_id', 'approved_timestamp',
-        'released_timestamp', 'pick_start_timestamp', 'picked_item_qty',
-        'pick_complete_timestamp', 'actual_weight'
-    ]
-    df = df[ordered_columns]
-   
-    df.to_csv(local_path, index=False)
-   
-    logging.info(f"💾 Local file saved to {local_path}")
-   
-    # Show a quick preview of rows in different states to verify the logic worked
-    logging.info("\n--- Logic Verification Preview ---")
-    logging.info(df[df['order_status'] == 'planned'][['order_status', 'approved_timestamp', 'fulfillment_line_id']].head(1))
-    logging.info(df[df['order_status'] == 'picking'][['order_status', 'expected_item_qty', 'picked_item_qty', 'pick_complete_timestamp']].head(1))
-    logging.info(df[df['order_status'] == 'picked complete'][['order_status', 'expected_weight', 'actual_weight', 'pick_complete_timestamp']].head(1))
-   
-    # 2. Upload to AWS S3
-    bucket = os.getenv('AWS_S3_BUCKET_NAME')
-    s3_key = "raw/fulfillment_event_data.csv"
-   
-    upload_to_s3(local_path, bucket, s3_key)
+    # 1. Generate Data (Defaulting to 200 for the daily pipeline batch)
+    try:
+        df = generate_state_machine_fulfillment_data(200)
+
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        local_path = f"data/raw/fulfillment_events_{timestamp_str}.csv"
+    
+        # Ensure correct column order matching your exact specifications
+        ordered_columns = [
+            'order_number', 'tracking_number', 'order_status', 'expected_weight', 'box_size',
+            'expected_packing_date', 'expected_delivery_date', 'year', 'week_number',
+            'expected_item_qty', 'site_name', 'fulfillment_line_id', 'approved_timestamp',
+            'released_timestamp', 'pick_start_timestamp', 'picked_item_qty',
+            'pick_complete_timestamp', 'actual_weight'
+        ]
+        df = df[ordered_columns]
+
+        df['_extracted_at'] = datetime.now().isoformat()
+    
+        df.to_csv(local_path, index=False)
+    
+        logging.info(f"💾 Local file saved to {local_path}")
+    
+        # Show a quick preview of rows in different states to verify the logic worked
+        logging.info("\n--- Logic Verification Preview ---")
+        logging.info(df[df['order_status'] == 'planned'][['order_status', 'approved_timestamp', 'fulfillment_line_id']].head(1))
+        logging.info(df[df['order_status'] == 'picking'][['order_status', 'expected_item_qty', 'picked_item_qty', 'pick_complete_timestamp']].head(1))
+        logging.info(df[df['order_status'] == 'picked complete'][['order_status', 'expected_weight', 'actual_weight', 'pick_complete_timestamp']].head(1))
+    
+        # 2. Upload to AWS S3
+        s3_key = f"raw/fulfillment_events_{timestamp_str}.csv"
+    
+        upload_to_s3(local_path, bucket, s3_key)
+    except Exception as e:
+        logging.error(f"Pipeline failed during data generation: {e}")
+        sys.exit(1)
